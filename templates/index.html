@@ -1,0 +1,218 @@
+<html>
+<head>
+<link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.3.1/css/bootstrap.min.css" integrity="sha384-ggOyR0iXCbMQv3Xipma34MD+dH/1fQ784/j6cY/iJTQUOhcWr7x9JvoRxT2MZw1T" crossorigin="anonymous">
+<script type="text/javascript" src="//cdnjs.cloudflare.com/ajax/libs/socket.io/1.3.6/socket.io.min.js"></script>
+<script src="https://ajax.googleapis.com/ajax/libs/jquery/3.3.1/jquery.min.js"></script>
+<link rel="stylesheet" href="{{  url_for('static', filename='main.css') }}">
+</head>
+<body>
+
+<div class="wrapper">
+
+
+
+
+<div id="listwrapper">
+
+  <ul id="list">
+    <li>Welcome to my game!</li>
+  </ul>
+
+  <div id="inputDiv">
+    <input placeholder="Enter message or answer..." id="sendInput">
+    <input type="button" value="send" id="sendButton">
+  </div>
+
+</div>
+
+
+<canvas id="canvas" width="500" height="500"></canvas>
+
+    <div class="join form-popup" id="myForm">
+      <div class="form-container">
+        <h1>Join Game</h1>
+        <label for="username"><b>Username</b></label>
+        <input id="name" type="text" placeholder="Enter Username" name="username" required>
+        <label for="room number"><b>Room number</b></label>
+        <input id="num" type="text" placeholder="Enter room number" name="room number" required>
+        <label for="file">Select a file</label>
+        <input name="file" type="file" id="upload-file">
+        <button id="joinRoom" class="btn">Join</button>
+      </div>
+    </div>
+
+<div class="tableFixHead">
+    <table class="table table-bordered">
+      <thead class="thead-dark">
+        <tr>
+          <th colspan="2" scope="col">Players</th>
+        </tr>
+      </thead>
+      <tbody id="table">
+      </tbody>
+    </table>
+</div>
+
+<div class="play">
+
+</div>
+
+</div>
+
+<script type="text/javascript">
+
+// בס"ד
+
+var socket = io.connect('http://' + document.domain + ':' + location.port + '/test', { transports: ['websocket'] });
+var room;
+var username;
+var imageData;
+var numberOfPlayers = 0;
+var myNum = 0;
+var words = ["car", "banana", "Israel", "pencil", "teacher", "anime", "Fortnite"];
+var paint = false;
+var canvas = document.getElementById("canvas");
+var ctx = canvas.getContext("2d");
+canvas.style.backgroundColor = "gray";
+
+function addClick(x, y, dragging) {
+  coordinates={"x": x, "y": y}
+  clickDrag=dragging
+  socket.emit('addClick', {data: {"coordinates": coordinates, "clickDrag": clickDrag, "room": room}});
+}
+socket.on('serverResponseAddClick', function(info) {
+      redraw(info.data.array, info.data.clickDrag)
+});
+function redraw(array1, clickDrag1) {
+  //ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.strokeStyle = "red";
+  ctx.lineJoin = "round";
+  ctx.lineWidth = 15;
+  for (var i = 0; i < array1.length; i++) {
+    ctx.beginPath();
+    if (clickDrag1[i] && i) {
+      ctx.moveTo(array1[i-1]['x'], array1[i-1]['y']);
+    } else {ctx.moveTo(array1[i].x, array1[i].y)}
+    ctx.lineTo(array1[i].x+0.001, array1[i].y+0.001);
+    ctx.closePath();
+    ctx.stroke();
+  }
+}
+$("#joinRoom").click(function(){
+   var fileList = document.getElementById("upload-file").files;
+   var fileReader = new FileReader();
+   if (fileReader && fileList && fileList.length) {
+      fileReader.readAsArrayBuffer(fileList[0]);
+      fileReader.onload = function () {
+        room = $("#num").val();
+        username = $("#name").val();
+        if (room && username) {
+          $("#list").append("<li>successfully connected to room "+room+"</li>")
+          var result = new Uint8Array(fileReader.result);
+          var blob = new Blob([result], { type: "image/jpeg" });
+          var urlCreator = window.URL || window.webkitURL;
+          var imageUrl = urlCreator.createObjectURL(blob);
+          socket.emit('join', {"data": {"room": room, "username": username, "imageData": imageUrl}})
+          socket.on('number', function(info){
+            myNum = info.number;
+          });
+        } else {
+          alert('No username or no image selected')
+        }
+      };
+   }
+});
+var players;
+socket.on('entered', function(info) {
+  players = info.players;
+  if (players.length == 2) { //initiate if 2 players are connected
+    gameStart(players);
+  }
+  $("#list").append("<li>"+info.players[info.players.length-1].username+" has joined your room</li>");
+  for (var i = document.getElementById("table").childElementCount; i < info.players.length; i++) {
+    var src = info.players[i].imageData;
+    $("#table").append(`<tr><td><img style="width:150px; height:150px;" src="${src}"></td><td style="text-align: center;">${info.players[i].username}</td></tr>`)
+  };
+  $(".join").remove();
+});
+
+var turn = -1;
+function gameStart(players) {
+  changeTurn(players)
+}
+function changeTurn(players) {
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  //turn = ((turn == players.length-1) || !turn) ? 0 : (turn + 1);
+  //when var turn;
+  if (turn == players.length-1) {
+    turn = 0;
+  } else {
+    turn++;
+  }
+
+  console.log(players.length)
+  console.log("num "+myNum)
+  console.log("turn "+turn)
+  if (myNum == turn) {
+    alert("your turn");
+    $('.play').show();
+    game();
+  }
+}
+socket.on('serverResponseChat', function(info) {
+  $("#list").append(`<li>${info.message}</li>`);
+});
+$("#sendButton").click(function(){
+  socket.emit('chat', {"message": $("#sendInput").val(), "room":room, "username": username, "countAsGuess": !(turn==myNum) })
+  $("#sendInput").val("");
+});
+function decision(choice) {
+  socket.emit("choice", {"choice": choice})
+  socket.emit('chat', {"message": username+" has chosen a word.", 'room':room})
+  //$(".play").remove();
+  //var els = $('.play'), saved = els.clone (true);
+  //els.remove ();
+  $('.play').hide();
+  $('#decisionP').remove();
+}
+socket.on('guessed', function(info){
+  console.log("turn changing...")
+  $("#canvas").unbind();
+  changeTurn(players);
+});
+function appendP(choices, i) {
+  pStyle = 'width:100%; height: 33.333%; margin-bottom: 0; text-align: center; border-style: solid;';
+  $(".play").append(`<p id="decisionP" onclick="decision('${choices[i]}')" style="${pStyle}">${choices[i]}</p>`)
+}
+function game() {
+  //if (!$(".play")) {
+  //  saved.appendTo ($(document));
+  //}
+  socket.emit("chat", {"message": username+" is choosing a word...", "room":room})
+  choices = []
+  for (var i = 0; i < 3; i++) { //amount of choices
+    choices[i] = words[Math.floor(Math.random()*3)];
+    if (i == 0) {
+      appendP(choices, i)
+      continue; //skip to next iteration
+    }
+    while (choices[i] == choices[i-1]) { //choose repeatedly until the 2 are different
+      choices[i] = words[Math.floor(Math.random()*3)]
+    }
+    appendP(choices, i) //after two are different append paragraph
+  }
+$("#canvas").mousedown(function(e){
+  paint = true;
+  addClick(e.pageX-this.offsetLeft, e.pageY-this.offsetTop, false)
+});
+$("#canvas").mouseup(function(e){ paint = false; });
+$("#canvas").mouseleave(function(e){ paint = false; });
+$("#canvas").mousemove(function(e){
+  if (paint == true) {
+    addClick(e.pageX-this.offsetLeft, e.pageY-this.offsetTop, true)
+  }
+});
+}
+</script>
+</body>
+</html>

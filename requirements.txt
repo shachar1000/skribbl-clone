@@ -1,0 +1,5 @@
+Flask==1.0.2
+Flask_SocketIO==3.0.1
+gunicorn
+eventlet
+gevent
